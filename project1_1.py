@@ -6,8 +6,6 @@ import os
 from urlparse import urlparse
 
 
-
-
 def make_request(url, path):
 	NL = "\r\n"
 	return ("GET {p} HTTP/1.1" + NL
@@ -15,7 +13,6 @@ def make_request(url, path):
 
 
 def Main():
-
 	link = sys.argv[-1]
 	FILENAME = sys.argv[-2]
 	parseStr = urlparse(link)
@@ -49,7 +46,6 @@ def Main():
 	file = open(FILENAME, 'wb')
 	file.write(data_recieved_wo_header)
 	while True:
-		print "we are in the loopppp"
 		data_recieved = clientSocket.recv(1024)
 		if not data_recieved:
 			break
