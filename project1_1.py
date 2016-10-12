@@ -40,11 +40,11 @@ def Main():
 	data_recieved = clientSocket.recv(1024)
 	bytes_rec = 0
 	index = data_recieved.find('\r\n\r\n')
-	data_recieved_wo_header = data_recieved[index+4:]
+	data_no_header = data_recieved[index+4:]
 	bytes_rec +=len(data_recieved)
 
 	file = open(FILENAME, 'wb')
-	file.write(data_recieved_wo_header)
+	file.write(data_no_header)
 	while True:
 		data_recieved = clientSocket.recv(1024)
 		if not data_recieved:
