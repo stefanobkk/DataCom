@@ -12,12 +12,12 @@ def make_request(url, path):
 		+"Host: {u}"+NL +NL).format(p=path,u=url)
 
 
-def make_resume_req(host,obj,_byte):
+def make_resume_req(path,host,obj,_byte):
 	NL = '\r\n'
-	return ("GET {o} HTTP/1.1" 
+	return ("GET {o}{p} HTTP/1.1" 
 		+ NL +"Host: {h}" 
 		+ NL +"Connection: close"
-		+ NL +"Range: {b}"+NL+NL).format(o=obj,h=host,b=_byte)
+		+ NL +"Range: {b}"+NL+NL).format(p=path,o=obj,h=host,b=_byte)
 
 
 def Main():
@@ -69,7 +69,7 @@ def downloads():
 	temp_file = open(File_name[0]+".temp."+"txt", 'wb')
 	tmp_file_size = 0
 	with open(FILENAME, 'wb') as file: 
-		while True and counter<9:
+		while True and counter<5:
 			print "in a damn loop"
 			data_recieved = clientSocket.recv(1024)
 			if not data_recieved:
@@ -101,6 +101,8 @@ def downloads():
 			if x =='\r':
 				break
 			Date_Modified +=x
+			#print Date_Modified.split[":"]
+
 
 		NL = '\r\n'
 		temp_file.write(Etag + NL + Content_length + NL+  byte_recieved_str + NL+ Date_Modified)
@@ -117,11 +119,10 @@ def downloads():
 
 	print byte_recieved, " Bytes received"
 	print "completed"
+	clientSocket.close()
 
 
 def resume():
-	print ""
-	print ""
 	link = sys.argv[-1]
 	FILENAME = sys.argv[-2]
 	File_name = FILENAME.split(".")
@@ -138,69 +139,71 @@ def resume():
 		if x =='\r':
 			break
 		ETag += x
+	ETag = ETag.split(': ')
 
 	Content_length = ""
 	for x in temp_file[temp_file.find('Content-Length:'):]:
 		if x =='\r':
 			break
 		Content_length +=x
-	
+	Content_length = Content_length.split(': ')
+
 	Date_Modified = ""
 	for x in temp_file[temp_file.find('Last-Modified:'):]:
 		if x =='\r':
 			break
 		Date_Modified +=x
+	Date_Modified = Date_Modified.split(': ')
 
 	byte_recieved =""
 	for x in temp_file[temp_file.find('Byte-recieved:'):]:
 		if x =='\r':
 			break
 		byte_recieved +=x
-
-	print ETag
-	print Content_length
-	print Date_Modified
-	print byte_recieved
+	byte_recieved = byte_recieved.split(': ')
 
 
+	request_2 = make_resume_req(PATH, URL, '/', "bytes="+str(byte_recieved[1])+"-")
+	clientSocket = skt.socket(skt.AF_INET, skt.SOCK_STREAM)
+	if parseStr.port == None:
+		url3 = URL.find("/")
+		clientSocket.connect((URL, 80))
+	else:
+		url3 = URL.find(":")
+		clientSocket.connect(link, parseStr.PORT)
+	clientSocket.send(request_2)
+	print 'Connected......'
 
-
-
-
-
-
-
-	"""
-
-	#Make Connection
-	try:
-		request_2 = make_resume_req(PATH,'/', "byte="+str(byte_recieved)+"-")
-		clientSocket = skt.socket(skt.AF_INET, skt.SOCK_STREAM)
-		if parseStr.port == None:
-			url3 = URL.find("/")
-			clientSocket.connect((URL, 80))
-		else:
-			url3 = URL.find(":")
-			clientSocket.connect(link, parseStr.PORT)
-		print request_2
-		clientSocket.send(request_2)
-		print 'Connected......'
-
-	except skt.error as serr:
-		print ("Error.....", serr)
-
-
-	sys.exit(1)
 	header2 = ""
 	result2 = ""
+
 	while "\r\n\r\n" not in header2:
-		print "loop"
 		result2 = clientSocket.recv(1)
 		header2 += result2
-	print header2
 
+	counter = 0
+	current_byte_num = int(byte_recieved[1])
+	temp_file = open(File_name[0]+".temp."+"txt", 'a+')
+	with open(FILENAME, 'wb') as file: 
+		while True and counter<9:
+			print "in a damn loop"
+			data_recieved = clientSocket.recv(1024)
+			if not data_recieved:
+				break
+			file.write(data_recieved)
+			current_byte_num +=len(data_recieved)
+			counter+=1
+
+	print "++++++++++",current_byte_num
+
+
+
+
+
+	print request_2
+	print header2
 	clientSocket.close()
-	"""
+
 
 if __name__ == '__main__':
 	Main()
