@@ -216,22 +216,29 @@ def resume():
 			file.write(data_recieved)
 			current_byte_num +=len(data_recieved)
 			counter+=1
-	print current_byte_num
-	print request_2
-	print header2
+	#print current_byte_num
+	#print request_2
+	#print header2
 
 
-
+	current_byte_num2 = current_byte_num
 	current_byte_num = "Byte-recieved: " + str(current_byte_num)
+
 	NL = '\r\n'
 	temp_file.write(ETag + NL + Content_length + NL + current_byte_num + NL + Date_Modified)
 
-	print Content_length, "------"
-	print current_byte_num, "++++++"
-	if current_byte_num == Content_length:
+
+	Content_length_int = Content_length.split(": ")[1]
+	Content_length_int = int(Content_length_int)
+
+	print current_byte_num2
+	print Content_length_int
+	if current_byte_num2 == Content_length_int:
+		print "the file has been removed "
 		os.remove(File_name[0]+".temp."+File_name[1])
-		print "the file has been removed"
+		print "DONNEEEEEEEEE"
 	clientSocket.close()
+
 
 
 if __name__ == '__main__':
