@@ -52,10 +52,10 @@ def Main():
 		sys.exit(1)
 
 	if not os.path.isfile(Filename+".temp."+File_extention):
-		print "downloads"
+		print "Downloading your file"
 		downloads()
 	else:
-		print "resume"
+		print "Resuming your download"
 		resume()
 
 
@@ -68,6 +68,7 @@ def downloads():
 	PATH = parseStr.path
 	PORT = parseStr.port
 
+	#make a connection
 	try:
 		request = make_request(URL, PATH)
 		clientSocket = skt.socket(skt.AF_INET, skt.SOCK_STREAM)
@@ -77,9 +78,8 @@ def downloads():
 		else:
 			url3 = URL.find(":")
 			clientSocket.connect(link, parseStr.PORT)
-		print request
 		clientSocket.send(request)
-		print 'Connected......'
+		print 'Connected to socket......'
 
 	except skt.error as serr:
 		print ("Error.....", serr)
@@ -91,27 +91,24 @@ def downloads():
 	while "\r\n\r\n" not in header:
 		result = clientSocket.recv(1)
 		header += result
-	print request
-	print header
-
 
 	byte_recieved = 0
 	counter = 0
+
+	#Creating a temporary file
 	temp_file = open(File_name[0]+".temp."+"txt", 'wb')
 	tmp_file_size = 0
 	with open(FILENAME, 'wb') as file: 
-		while True and counter<10:
-			print "in a damn loop"
+		while True:
 			data_recieved = clientSocket.recv(1024)
 			if not data_recieved:
 				break
 			file.write(data_recieved)
 			byte_recieved +=len(data_recieved)
-			counter+=1
+			#counter+=1
 
-
-		## Adding bytes-recieved to the temp file
 		byte_recieved_str = "Byte-recieved: " + str(byte_recieved)
+
 
 
 		#Extracting header and putting it into a temporaty file so we can check during resume. 
@@ -133,12 +130,20 @@ def downloads():
 				break
 			Date_Modified +=x
 
+
+
+		#Here we write the content into our temporary file
 		NL = '\r\n'
 		temp_file.write(Etag + NL + Content_length + NL+  byte_recieved_str + NL+ Date_Modified)
 
 
-	print byte_recieved, " Bytes received"
-	print "completed"
+	Content_length_int = Content_length.split(": ")[1]
+	Content_length_int = int(Content_length_int)
+
+	if Content_length_int == byte_recieved:
+		print "You have downloaded your file of size", byte_recieved
+		os.remove(File_name[0]+".temp."+File_name[1])
+
 	clientSocket.close()
 
 
@@ -151,18 +156,21 @@ def resume():
 	PATH = parseStr.path
 	PORT = parseStr.port
 
-
+	#Pulling all the content from our temporary file that contains the header. 
 	ETag = ""
 	Content_length = ""
 	byte_recieved =""
 	Date_Modified = ""
-	temp_file = open(File_name[0]+".temp."+"txt", 'r').read()
+
+
+	#Here we open the temporary file and extract all the content from it.
+	temp_file = open(File_name[0]+".temp."+"txt", 'r').read() #open our temporary file and .read() turns it into a string
 	for x in temp_file[temp_file.find('ETag:'):]:
 		if x =='\r':
 			break
 		ETag += x
 	ETag_split = ETag.split(': ')
-	
+
 	for x in temp_file[temp_file.find('Content-Length:'):]:
 		if x =='\r':
 			break
@@ -182,8 +190,10 @@ def resume():
 	byte_recieved_split = byte_recieved.split(': ')
 
 
+
+	#Try to make a connection
 	try:
-		request_2 = make_resume_req(PATH, URL, '/', "bytes="+str(byte_recieved_split[1])+"-")
+		request_2 = make_resume_req(PATH, URL, '/', "bytes="+str(byte_recieved_split[1])+"-") #Our new HTTP Get 
 		clientSocket = skt.socket(skt.AF_INET, skt.SOCK_STREAM)
 		if parseStr.port == None:
 			url3 = URL.find("/")
@@ -197,6 +207,7 @@ def resume():
 		print ("Error.....", serr)
 
 
+	##Getting the header of the file
 	header2 = ""
 	result2 = ""
 	while "\r\n\r\n" not in header2:
@@ -207,23 +218,21 @@ def resume():
 	temp_file = open(File_name[0]+".temp."+"txt", 'wb')
 
 
-
+	#appending the new content to the our data file
 	with open(FILENAME, 'a+') as file: 
-		while True and counter<15:
+		while True:
 			data_recieved = clientSocket.recv(1024)
 			if not data_recieved:
 				break
 			file.write(data_recieved)
 			current_byte_num +=len(data_recieved)
-			counter+=1
-	#print current_byte_num
-	#print request_2
-	#print header2
+			#counter+=1
 
 
 	current_byte_num2 = current_byte_num
 	current_byte_num = "Byte-recieved: " + str(current_byte_num)
 
+	#Here we write the content back into our temporary file. 
 	NL = '\r\n'
 	temp_file.write(ETag + NL + Content_length + NL + current_byte_num + NL + Date_Modified)
 
@@ -233,10 +242,11 @@ def resume():
 
 	print current_byte_num2
 	print Content_length_int
+
+	#Check to see if the data we have recieved is eqaul to the content length. 
 	if current_byte_num2 == Content_length_int:
-		print "the file has been removed "
+		print "Download Complete "
 		os.remove(File_name[0]+".temp."+File_name[1])
-		print "DONNEEEEEEEEE"
 	clientSocket.close()
 
 
