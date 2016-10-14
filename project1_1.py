@@ -19,6 +19,7 @@ def make_resume_req(path,host,obj,_byte):
 		+ NL +"Connection: close"
 		+ NL +"Range: {b}"+NL+NL).format(p=path,o=obj,h=host,b=_byte)
 
+"""
 def speedTest(start, size, file_name):
 	total = time.time() - start
 	print "Reading took %.2f seconds, transfer rate %.2f KBPS" %(total, (size/1024.0)/ total)
@@ -31,13 +32,31 @@ def progess(bytes_so_far, chunk_size, total_size, start, size, file_name):
 	sys.stdout.write("Downloaded %d of %d bytes (%.2f%%) \r" %(bytes_so_far, total_size, percent))
 	if bytes_so_far >= total_size:
 		sys.stdout.write('\n')
-
+"""
 
 
 def Main():
+	Filename = sys.argv[-2]
+	Filename_split = sys.argv[-2].split('.')
+	Filename = Filename_split[0]
+	File_extention = Filename_split[1]
+	url = sys.argv[3]
 
-	downloads()
-	#resume()
+	if len(sys.argv) <4:
+		print "You need to enter the correct command."
+		print "Example --> " + "srget -o filename.txt http://url/"
+		sys.exit(1)
+
+	if url[:7] != "http://":
+		print "Please add http:// in the url name"
+		sys.exit(1)
+
+	if not os.path.isfile(Filename+".temp."+File_extention):
+		print "downloads"
+		downloads()
+	else:
+		print "resume"
+		resume()
 
 
 def downloads():
@@ -72,8 +91,6 @@ def downloads():
 	while "\r\n\r\n" not in header:
 		result = clientSocket.recv(1)
 		header += result
-
-
 	print request
 	print header
 
@@ -83,7 +100,7 @@ def downloads():
 	temp_file = open(File_name[0]+".temp."+"txt", 'wb')
 	tmp_file_size = 0
 	with open(FILENAME, 'wb') as file: 
-		while True and counter<5:
+		while True and counter<10:
 			print "in a damn loop"
 			data_recieved = clientSocket.recv(1024)
 			if not data_recieved:
@@ -115,7 +132,6 @@ def downloads():
 			if x =='\r':
 				break
 			Date_Modified +=x
-			#print Date_Modified.split[":"]
 
 		NL = '\r\n'
 		temp_file.write(Etag + NL + Content_length + NL+  byte_recieved_str + NL+ Date_Modified)
@@ -134,53 +150,55 @@ def resume():
 	URL = parseStr.hostname
 	PATH = parseStr.path
 	PORT = parseStr.port
-	
 
-	temp_file = open(File_name[0]+".temp."+"txt", 'r').read()
 
 	ETag = ""
+	Content_length = ""
+	byte_recieved =""
+	Date_Modified = ""
+	temp_file = open(File_name[0]+".temp."+"txt", 'r').read()
 	for x in temp_file[temp_file.find('ETag:'):]:
 		if x =='\r':
 			break
 		ETag += x
 	ETag_split = ETag.split(': ')
 
-
-	Content_length = ""
 	for x in temp_file[temp_file.find('Content-Length:'):]:
 		if x =='\r':
 			break
 		Content_length +=x
 	Content_length_split = Content_length.split(': ')
 
-	Date_Modified = ""
 	for x in temp_file[temp_file.find('Last-Modified:'):]:
 		if x =='\r':
 			break
 		Date_Modified +=x
 	Date_Modified_split = Date_Modified.split(': ')
 
-	byte_recieved =""
 	for x in temp_file[temp_file.find('Byte-recieved:'):]:
 		if x =='\r':
 			break
 		byte_recieved +=x
 	byte_recieved_split = byte_recieved.split(': ')
 
-	request_2 = make_resume_req(PATH, URL, '/', "bytes="+str(byte_recieved_split[1])+"-")
-	clientSocket = skt.socket(skt.AF_INET, skt.SOCK_STREAM)
-	if parseStr.port == None:
-		url3 = URL.find("/")
-		clientSocket.connect((URL, 80))
-	else:
-		url3 = URL.find(":")
-		clientSocket.connect(link, parseStr.PORT)
-	clientSocket.send(request_2)
-	print 'Connected......'
+
+	try:
+		request_2 = make_resume_req(PATH, URL, '/', "bytes="+str(byte_recieved_split[1])+"-")
+		clientSocket = skt.socket(skt.AF_INET, skt.SOCK_STREAM)
+		if parseStr.port == None:
+			url3 = URL.find("/")
+			clientSocket.connect((URL, 80))
+		else:
+			url3 = URL.find(":")
+			clientSocket.connect(link, parseStr.PORT)
+		clientSocket.send(request_2)
+		print 'Connected......'
+	except skt.error as serr:
+		print ("Error.....", serr)
+
 
 	header2 = ""
 	result2 = ""
-
 	while "\r\n\r\n" not in header2:
 		result2 = clientSocket.recv(1)
 		header2 += result2
@@ -188,22 +206,31 @@ def resume():
 	current_byte_num = int(byte_recieved_split[1])
 	temp_file = open(File_name[0]+".temp."+"txt", 'wb')
 
+
+
 	with open(FILENAME, 'a+') as file: 
-		while True and counter<9:
+		while True and counter<15:
 			data_recieved = clientSocket.recv(1024)
 			if not data_recieved:
 				break
 			file.write(data_recieved)
 			current_byte_num +=len(data_recieved)
 			counter+=1
-
 	print current_byte_num
 	print request_2
 	print header2
 
+
+
 	current_byte_num = "Byte-recieved: " + str(current_byte_num)
 	NL = '\r\n'
 	temp_file.write(ETag + NL + Content_length + NL + current_byte_num + NL + Date_Modified)
+
+	print Content_length, "------"
+	print current_byte_num, "++++++"
+	if current_byte_num == Content_length:
+		os.remove(File_name[0]+".temp."+File_name[1])
+		print "the file has been removed"
 	clientSocket.close()
 
 
