@@ -1,0 +1,300 @@
+#!/usr/bin/env python
+import socket as skt 
+import requests
+import sys
+import time
+import os
+import asyncore
+import logging
+from urlparse import urlparse
+import threading
+import itertools
+import inspect
+
+
+def make_request(url, path):
+	NL = "\r\n"
+	return ("GET {p} HTTP/1.1" + NL
+		+"Host: {u}"+NL 
+		+"Connection: close" + NL
+		+ NL).format(p=path,u=url)
+
+
+def make_request_with_range(path,host,byte):
+	NL = '\r\n'
+	return ("GET {p} HTTP/1.1" 
+		+ NL +"Host: {h}" 
+		+ NL +"Connection: close"
+		+ NL +"Range: {b}"+NL+NL).format(p=path,h=host,b=byte)
+
+
+def progess(bytes_so_far, chunk_size, total_size, start):
+	total = time.time() - start
+	percent = float(bytes_so_far)/total_size
+	percent = round(percent*100, 2)
+	aa = int((total_size/chunk_size)/total)
+	sys.stdout.write("Downloaded %d of %d bytes (%.2f%%) \r" %(bytes_so_far, total_size, percent))
+	if bytes_so_far >= total_size:
+		sys.stdout.write('\n')
+	return percent
+
+def content_extractor(url):
+	parseStr = urlparse(url)
+	host_name = parseStr.hostname
+	port = parseStr.port
+	path = parseStr.path
+	return host_name, port, path
+
+
+def header_extractor(clientSocket):
+	result = ""
+	header = ""
+	while "\r\n\r\n" not in header:
+		result = clientSocket.recv(1)
+		header += result
+	return header
+
+
+def make_connection(url):
+	curframe = inspect.currentframe()
+	calframe = inspect.getouterframes(curframe, 2)
+	host_name, port, path = content_extractor(url)
+	clientSocket = skt.socket(skt.AF_INET, skt.SOCK_STREAM)
+
+	if calframe[1][3] == "content_length_extractor":
+		if not port:
+			clientSocket.connect((host_name, 80))
+			request_no_range = make_request(host_name, path)
+		else:
+			clientSocket.connect((host_name, port))
+			request_no_range = make_request(host_name, path)
+		clientSocket.send(request_no_range)
+	return clientSocket
+		
+def content_length_extractor(url):
+	clientSocket = make_connection(url)
+	header = header_extractor(clientSocket)
+	content_length = ""
+	for x in header[header.find('Content-Length:'):]:
+		if x =='\r':
+			break
+		content_length +=x
+	return content_length
+
+
+#In this function we are just preparing our file to be downloaded concurrently.
+def download_preparation(buffer_size, filename, content_length, content_range, connection_number, thread_status_list, url):
+	content_length = (int(content_range[1]) - int(content_range[0])) +1
+	size_of_each_chunk = int(content_length) // connection_number
+
+	all_points = []
+	all_points = [content_range[0]] + all_points
+	for x in range(connection_number):
+		if x > 0:
+			starter = size_of_each_chunk * x
+			ender = (starter - 1)
+			all_points.append(ender)
+			all_points.append(starter)
+	all_points = all_points + [content_range[1]]
+
+	for i in all_points:
+		starting_only = all_points[::2]
+		ending_only = all_points[1::2]
+
+	combined_start_end_list_in_list = []
+	try:
+		for i, j in zip(starting_only, ending_only):
+			combined_start_end_list_in_list.append([i,j])
+		for i, j, k in zip(combined_start_end_list_in_list, range(connection_number), thread_status_list):
+			t = threading.Thread(target=thread_handler, args=(
+				buffer_size, starting_only, ending_only, content_length, size_of_each_chunk, filename, 
+				url, i, connection_number, thread_status_list))
+			t.start()
+			#Note join is used so that the threads wait 
+			t.join()
+			error_checking(filename, thread_status_list)
+			
+	except Exception:
+		print "Something went really wrong"
+		print Exception
+
+
+
+#This creates all the meta files that will be used later. 
+def create_meta_files(filename, connection_number):
+	filename_list = [] 
+	for i in range(connection_number):
+		tmp = "_meta" + str(i) +  filename
+		filename_list.append(tmp)
+	return filename_list
+
+
+#Error checking checks if any of the values in our thread_status_list is False, if it is false then we write what we have to
+# our main file 
+def error_checking(filename, thread_status_list):
+	for o in thread_status_list:
+		if o ==False:
+			with open(filename, "wb+") as f:
+				strr1  = str(i[0]) + "," + str(content_length)
+				f.write(strr1)
+			my_dir = os.getcwd()
+			for filename in os.listdir(my_dir):
+				if filename.startswith("_meta"):
+					os.remove(os.path.join(my_dir, fname))
+
+
+
+def thread_handler(buffer_size, starting_points, ending_points, content_length, size_of_each_chunk, 
+	filename, url, content_range, connection_number, thread_status_list):
+	content_length = int(content_range[1]) - int(content_range[0]) +1 
+	size_of_each_chunk = int(content_length) / connection_number
+	
+	#These list comprehenssion handles the new range that comes in from the download_preparer
+	#The two lines below was done with the help of Nook. I want to credit him for these 2 lines
+	starting_only = [content_range[0]] + [content_range[0] + (size_of_each_chunk * x) for x in range(connection_number) if x > 0]
+	ending_only = [x + size_of_each_chunk - 1 for x in starting_only[:-1]] + [content_range[1]]
+	
+	metadata_filenames = create_meta_files(filename, connection_number)
+	threads = []
+	try:
+		for meta, start, end , ranges in zip(metadata_filenames, starting_only, ending_only, range(len(thread_status_list))):
+			t = threading.Thread(target=downloader, args=(
+				buffer_size, str(meta), url, str(start), str(end),thread_status_list, ranges))
+			threads.append(t)
+			print "sending thread:", (start, end)
+			t.start()
+	 	for t in threads:
+	 		t.join()
+	except Exception:
+		print "Somethong went wrong with the thread allocator"
+		print Exception
+
+	counter = 0
+	for i in range(len(thread_status_list)):
+		if thread_status_list[i]:
+			counter +=1
+		if counter == connection_number:
+			combine_file(metadata_filenames, filename)
+
+
+
+def combine_file(files, main_file):
+    dirr = os.getcwd()
+    with open(main_file, 'a+') as f:
+        for fname in files:
+            with open(fname) as infile:
+                for line in infile:
+                    f.write(line)
+            os.remove(dirr + "/" + fname)
+    print"combine successful"
+
+
+def downloader(buffer_size, filename, url, start , end, thread_status_list, i):
+	host_name, port, path = content_extractor(url)
+	clientSocket = skt.socket(skt.AF_INET, skt.SOCK_STREAM)
+	try:
+		if not port:
+			clientSocket.connect((host_name, 80))
+			if end == "-":
+				request = make_request_with_range(path, host_name, "bytes=" + start + "-")
+			else:
+				request = make_request_with_range(path, host_name, "bytes=" + start +"-"+ end)
+		else:
+			clientSocket.connect((host_name, port))
+			if end == "-":
+				request = make_request_with_range(path, host_name, "bytes=" + start + "-")
+			else:
+				request = make_request_with_range(path, host_name, "bytes=" + start +"-"+ end)
+		clientSocket.send(request)
+
+	except Exception:
+		print "there is an with the downloader"
+		print Exception
+		thread_status_list[i] = False
+
+
+	header = header_extractor(clientSocket)
+	data_recv = 0
+	try:
+		with open(filename, 'a+') as f:
+			while True:
+				result = clientSocket.recv(buffer_size)
+				if not result:
+					break
+				f.write(result)
+				data_recv += len(result)
+		thread_status_list[i] = True
+
+
+	except IOError:
+		print "writing progress interrupt"
+		thread_status_list[i] = False
+	except skt.timeout:
+		print("timeout error")
+		thread_status_list[i] = False
+	except skt.error:
+		print("socket error occured: ")
+		thread_status_list[i] = False
+	except Exception as m:
+		print m
+		thread_status_list[i] = False
+	clientSocket.close()
+
+
+
+
+def Main():
+	if len(sys.argv) < 4:
+		print "You have entered an incorrect command please re-check and try again"
+		print "here is a template"
+
+	if len(sys.argv) == 4:
+		Filename = sys.argv[-2]
+		url = sys.argv[-1]
+		start_time = time.time()
+		buffer_size = 1024
+		content_length = content_length_extractor(sys.argv[-1])
+		content_range = [0, content_length.split(": ")[1]]
+		connection_number = 5
+		thread_status_list = [None] * connection_number
+
+		if url[:7] != "http://":
+			print "Please add http:// in the url name"
+			sys.exit(1)
+
+		if not os.path.isfile(Filename):
+			download_preparation(buffer_size, Filename, content_length, content_range, connection_number, thread_status_list, url)
+		else: 
+			print "The filename already exist please change the destination filename"
+
+
+	elif len(sys.argv) == 6:
+		Filename = sys.argv[2]
+		url = sys.argv[-1]
+		start_time = time.time()
+		buffer_size = 2048
+		content_length = content_length_extractor(sys.argv[-1])
+		content_range = [0, content_length.split(": ")[1]]
+		connection_number = int(sys.argv[-2])
+		#This creates an empy list of range(connection_number) it will be used later to check if chuck download is True or False
+		thread_status_list = [None] * connection_number
+
+		if url[:7] != "http://":
+			print "Please add http:// in the url name"
+			sys.exit(1)
+		download_preparation(buffer_size, Filename, content_length, content_range, connection_number, thread_status_list, url)
+		
+		if not os.path.isfile(Filename):
+			download_preparation(buffer_size, Filename, content_length, content_range, connection_number, thread_status_list, url)
+		else: 
+			print "The filename already exist please change the destination filename"
+
+	else:
+		print "There seems to be a problem with your input command please try again"
+
+
+
+
+
+if __name__ == '__main__':
+	Main()
